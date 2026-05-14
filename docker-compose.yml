@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      DATABASE_URL: sqlite:////app/data/agis.db
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
