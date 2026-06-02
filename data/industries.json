@@ -1,0 +1,6 @@
+[
+  {"id": "general", "label": "汎用", "pack": "general.json"},
+  {"id": "healthcare", "label": "医療・介護", "pack": "healthcare.json"},
+  {"id": "finance", "label": "金融", "pack": "finance.json"},
+  {"id": "legal_hr", "label": "法務・人事", "pack": "legal_hr.json"}
+]

@@ -1,0 +1,21 @@
+{
+  "id": "general",
+  "label": "汎用",
+  "focus_genres": [
+    "PERSON",
+    "EMAIL",
+    "PHONE",
+    "ADDRESS",
+    "ORG",
+    "ID_NUMBER",
+    "DATE_OF_BIRTH",
+    "AGE",
+    "WEIGHT",
+    "COMPANY_SELF",
+    "COMPANY_OTHER",
+    "CREDIT_CARD",
+    "URL"
+  ],
+  "extends_genres": [],
+  "guidance": "文中の文脈から秘匿が必要な固有名詞・連絡先・住所・識別子・年齢・身体数値を漏れなく抽出する。業界の重点項目に加え、文面から読み取れるその他の個人情報も拾う。"
+}

@@ -1,0 +1,22 @@
+{
+  "id": "legal_hr",
+  "label": "法務・人事",
+  "focus_genres": [
+    "PERSON",
+    "EMAIL",
+    "PHONE",
+    "ADDRESS",
+    "ORG",
+    "ID_NUMBER",
+    "COMPANY_SELF",
+    "COMPANY_OTHER",
+    "DATE_OF_BIRTH"
+  ],
+  "extends_genres": [
+    {"code": "CASE_NUMBER", "label": "案件番号・事件番号"},
+    {"code": "CONTRACT_ID", "label": "契約番号・書類番号"},
+    {"code": "SALARY", "label": "給与・報酬額"},
+    {"code": "EVALUATION", "label": "評価・人事考課内容"}
+  ],
+  "guidance": "案件番号・契約当事者・個人名・社員番号・給与・評価・懲戒・採用情報・法務文書中の識別子を抽出する。自社・他社の区別に注意する。"
+}

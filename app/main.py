@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TypedDict
 
 import google.generativeai as genai
 import httpx
@@ -15,13 +17,23 @@ from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.activity import write_activity
+from app.actor import resolve_actor
 from app.anonymizer import (
     build_mappings_and_anonymize,
-    load_placeholder_map,
+    load_merged_placeholder_map,
     restore_text,
 )
+from app.masking_policy import resolve_industry
 from app.database import SessionLocal, init_db
 from app.models import AuditLog
+
+
+class GeminiHistoryTurn(TypedDict):
+    """One turn in anonymized Gemini chat history (`user` or `model`)."""
+
+    role: str
+    content: str
 
 
 @dataclass(frozen=True)
@@ -33,6 +45,7 @@ class GatewayResult:
     input_raw: str
     text_anonymized: str
     text_gemini_raw: str
+    output_abstract: str
     output_restored: str
 
 
@@ -44,26 +57,70 @@ def _require_env(name: str) -> str:
     return v
 
 
-def process_gateway(user_text: str) -> GatewayResult:
+def _call_gemini(
+    model: genai.GenerativeModel,
+    anonymized_user_text: str,
+    gemini_history: list[GeminiHistoryTurn] | None,
+) -> object:
+    """Send anonymized user text; optional prior turns keep multi-turn context."""
+    if gemini_history:
+        history_payload = [
+            {"role": t["role"], "parts": [t["content"]]} for t in gemini_history
+        ]
+        chat = model.start_chat(history=history_payload)
+        return chat.send_message(anonymized_user_text)
+    return model.generate_content(anonymized_user_text)
+
+
+def process_gateway(
+    user_text: str,
+    *,
+    actor: str | None = None,
+    industry: str | None = None,
+    gemini_history: list[GeminiHistoryTurn] | None = None,
+    conversation_audit_ids: list[int] | None = None,
+) -> GatewayResult:
     """
     End-to-end flow: create audit row, anonymize, call Gemini, restore placeholders, persist.
     On failure, marks AuditLog as failed and re-raises.
+
+    ``gemini_history``: prior anonymized turns (user/model) for follow-up questions.
+    ``conversation_audit_ids``: audit IDs from the same GUI chat session for merged restore.
     """
+    actor_resolved = resolve_actor(actor)
+    industry_resolved = resolve_industry(industry)
+    t0 = time.perf_counter()
+
     # --- Phase: bootstrap config and schema ---
     load_dotenv()
     init_db()
 
     session = SessionLocal()
-    audit = AuditLog(status="pending", input_raw=user_text)
+    audit = AuditLog(status="pending", input_raw=user_text, industry=industry_resolved)
     session.add(audit)
     session.commit()
     session.refresh(audit)
     audit_id = audit.id
 
+    write_activity(
+        actor=actor_resolved,
+        action="gateway.request",
+        summary=f"ゲートウェイ受付 audit_id={audit_id} len={len(user_text)}",
+        detail={
+            "input_length": len(user_text),
+            "masking_source": os.environ.get("MASKING_SOURCE", "auto"),
+            "masking_mode": os.environ.get("MASKING_MODE", "abstract"),
+            "industry": industry_resolved,
+        },
+        audit_log_id=audit_id,
+    )
+
     try:
         # --- Phase: local LLM extraction + DB mappings + replace ---
         try:
-            anonymized = build_mappings_and_anonymize(session, audit_id, user_text)
+            anonymized = build_mappings_and_anonymize(
+                session, audit_id, user_text, industry=industry_resolved
+            )
         except httpx.HTTPError as e:
             raise RuntimeError(f"Ollama HTTP error: {e}") from e
 
@@ -80,7 +137,7 @@ def process_gateway(user_text: str) -> GatewayResult:
         # 1.5 は 404 になり得る。2.0-flash は無料枠クォータ枯れで 429 になり得るため、デフォルトは 2.5-flash。
         model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
         model = genai.GenerativeModel(model_name)
-        gemini_response = model.generate_content(anonymized)
+        gemini_response = _call_gemini(model, anonymized, gemini_history)
         raw_text = _gemini_response_text(gemini_response)
 
         row = session.get(AuditLog, audit_id)
@@ -90,8 +147,11 @@ def process_gateway(user_text: str) -> GatewayResult:
         row.status = "sent"
         session.commit()
 
-        # --- Phase: restore placeholders using Mapping table ---
-        ph_map = load_placeholder_map(session, audit_id)
+        # --- Phase: restore placeholders (merge maps across conversation turns) ---
+        restore_ids = list(conversation_audit_ids or [])
+        if audit_id not in restore_ids:
+            restore_ids.append(audit_id)
+        ph_map = load_merged_placeholder_map(session, restore_ids)
         restored = restore_text(raw_text, ph_map)
 
         row = session.get(AuditLog, audit_id)
@@ -104,16 +164,42 @@ def process_gateway(user_text: str) -> GatewayResult:
         final = session.get(AuditLog, audit_id)
         if final is None:
             raise RuntimeError("AuditLog not found after success commit")
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        write_activity(
+            actor=actor_resolved,
+            action="gateway.success",
+            summary=f"完了 audit_id={audit_id} {elapsed_ms}ms",
+            detail={
+                "audit_log_id": audit_id,
+                "elapsed_ms": elapsed_ms,
+                "industry": industry_resolved,
+            },
+            audit_log_id=audit_id,
+        )
         return GatewayResult(
             audit_id=final.id,
             created_at=final.created_at,
             input_raw=final.input_raw,
             text_anonymized=final.text_anonymized or "",
             text_gemini_raw=final.text_gemini_raw or "",
+            output_abstract=raw_text,
             output_restored=final.output_restored or "",
         )
 
-    except Exception:
+    except Exception as e:
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        write_activity(
+            actor=actor_resolved,
+            action="gateway.failure",
+            summary=f"失敗 audit_id={audit_id}: {type(e).__name__}",
+            detail={
+                "audit_log_id": audit_id,
+                "elapsed_ms": elapsed_ms,
+                "error": str(e)[:500],
+                "industry": industry_resolved,
+            },
+            audit_log_id=audit_id,
+        )
         session.rollback()
         row = session.get(AuditLog, audit_id)
         if row is not None:
@@ -340,6 +426,16 @@ def _cli(argv: list[str] | None = None) -> int:
         action="store_true",
         help="--show-pipeline 時に Gemini 応答ブロックを省略する",
     )
+    run_p.add_argument(
+        "--actor",
+        default=None,
+        help="操作ログ用の実行者ラベル（未指定時は環境変数 AGIS_ACTOR）",
+    )
+    run_p.add_argument(
+        "--industry",
+        default=None,
+        help="業界 ID（未指定時は環境変数 AGIS_INDUSTRY、既定 general）",
+    )
 
     # --- show: DB に保存済みの行を表示 ---
     show_p = subparsers.add_parser("show", help="保存済み AuditLog の内容を表示する")
@@ -379,7 +475,7 @@ def _cli(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        result = process_gateway(text)
+        result = process_gateway(text, actor=args.actor, industry=args.industry)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2

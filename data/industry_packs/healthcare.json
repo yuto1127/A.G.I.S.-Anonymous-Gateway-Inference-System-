@@ -1,0 +1,20 @@
+{
+  "id": "healthcare",
+  "label": "医療・介護",
+  "focus_genres": [
+    "PERSON",
+    "ID_NUMBER",
+    "DATE_OF_BIRTH",
+    "AGE",
+    "PHONE",
+    "ADDRESS",
+    "ORG"
+  ],
+  "extends_genres": [
+    {"code": "DIAGNOSIS", "label": "診断名・病名"},
+    {"code": "PATIENT_ID", "label": "患者ID・カルテ番号"},
+    {"code": "INSURANCE_ID", "label": "保険証番号・被保険者番号"},
+    {"code": "FACILITY", "label": "医療機関名・施設名"}
+  ],
+  "guidance": "患者・利用者に関する情報を最優先する。患者ID・カルテ番号・保険証番号・診断名・処方・検査結果・施設名・担当医名・生年月日・連絡先を文脈から抽出する。数値だけの年齢や検査値も秘匿対象とする。"
+}

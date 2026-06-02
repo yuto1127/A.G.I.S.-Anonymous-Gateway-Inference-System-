@@ -1,0 +1,16 @@
+[
+  {"code": "OTHER", "label": "その他"},
+  {"code": "AGE", "label": "年齢"},
+  {"code": "WEIGHT", "label": "体重・体積など身体数値"},
+  {"code": "COMPANY_SELF", "label": "自社名・自ブランド"},
+  {"code": "COMPANY_OTHER", "label": "他社名・取引先名"},
+  {"code": "PERSON", "label": "個人名"},
+  {"code": "EMAIL", "label": "メールアドレス"},
+  {"code": "PHONE", "label": "電話番号"},
+  {"code": "ADDRESS", "label": "住所"},
+  {"code": "ORG", "label": "組織・部署名（一般）"},
+  {"code": "ID_NUMBER", "label": "個人番号・ID・口座など"},
+  {"code": "CREDIT_CARD", "label": "カード番号"},
+  {"code": "DATE_OF_BIRTH", "label": "生年月日"},
+  {"code": "URL", "label": "URL"}
+]

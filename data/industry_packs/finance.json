@@ -1,0 +1,20 @@
+{
+  "id": "finance",
+  "label": "金融",
+  "focus_genres": [
+    "PERSON",
+    "ID_NUMBER",
+    "CREDIT_CARD",
+    "EMAIL",
+    "PHONE",
+    "ADDRESS",
+    "COMPANY_OTHER",
+    "ORG"
+  ],
+  "extends_genres": [
+    {"code": "ACCOUNT_NUMBER", "label": "口座番号・IBAN"},
+    {"code": "TRANSACTION_ID", "label": "取引ID・参照番号"},
+    {"code": "CUSTOMER_ID", "label": "顧客番号・会員ID"}
+  ],
+  "guidance": "口座・カード・取引・顧客番号・契約番号・残高・振込先・本人確認情報を重点的に抽出する。法人名・支店名も秘匿対象とする。"
+}
